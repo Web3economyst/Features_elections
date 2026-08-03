@@ -51,9 +51,11 @@ Os PDFS podem ser encontrados aqui: https://drive.google.com/drive/folders/1vTA3
 Foram retirados todos os cenários a não ser o cenário 1 e também pesquisas que ficaram null (sem features), mas ficou pendente validar quais não bateram corretamente (Os que estavam na base do poder360 e não foram baixados, pois a base foi todos que estavam na wikipedia de 2022)
 
 
-==============================================================================
-VARIAVÉIS
 ------------------------------------------------------------------------------
+VARIÁVEIS
+------------------------------------------------------------------------------
+
+
 VARIÁVEL DEPENDENTE 
 
 abs_vies = |estimativa da pesquisa − resultado real TSE|
