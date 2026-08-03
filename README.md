@@ -5,7 +5,7 @@ Contem o processamento do ano de 2018.
 
 Arquivos:
 
-  - selecao (codigo Python)
+  - selecao1 (codigo Python)
         Script que faz o MERGE das bases e cria as features do ano de 2018.
         Combina as duas bases abaixo (base_todas_long + pesquisas features).
 
@@ -31,6 +31,11 @@ Contem o processamento do ano de 2022, seguindo a mesma logica de 2018.
 
 Arquivos:
 
+
+- selecao_20221 (codigo Python)
+        Script que faz o MERGE das bases e cria as features do ano de 2022.
+        Combina as duas bases abaixo (base_2022_todas + bases_2022_dias_corrigidos).
+  
   - base_2022_todas
         Base baixada/gerada a partir do codigo em R.
         Equivalente ao base_todas_long de 2018.
