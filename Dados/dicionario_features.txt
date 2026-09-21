@@ -1,0 +1,325 @@
+================================================================================
+DICIONARIO DE FEATURES -- COMO CADA VARIAVEL E EXTRAIDA DO TEXTO DO TSE
+Bases: base_analise_2018.xlsx e base_analise_2022.xlsx (aba base_longa)
+Codigo: nucleo_base_analise.py, secoes 2 e 3
+================================================================================
+
+REGRA GERAL DE ESCOPO
+---------------------
+O registro do TSE tem tres campos de texto livre. Eles sao agrupados em dois
+blocos, e cada regra so procura no bloco que lhe cabe:
+
+  DESENHO  = DS_METODOLOGIA_PESQUISA + DS_PLANO_AMOSTRAL
+             -> modo de coleta (telefonica, presencial, online)
+  CONTROLE = DS_SISTEMA_CONTROLE
+             -> percentual de checagem
+
+Por que separar: a frase "checados por telefone" aparece na secao de
+controle de varias pesquisas PRESENCIAIS (o supervisor liga para conferir).
+Sem escopo, Datafolha e Amostra Instituto eram classificados como
+telefonicos. Uma unica excecao atravessa o escopo, documentada em
+"telefonica" abaixo.
+
+Antes de aplicar os padroes, o texto passa por sem_acento(): vira minusculo
+e perde acentos, para os regex nao dependerem de grafia. Por isso todos os
+padroes abaixo estao escritos sem acento.
+
+================================================================================
+1. telefonica          (0/1)   -- ambos os anos
+================================================================================
+BUSCA EM: DESENHO
+
+PADRAO PRINCIPAL (PAD_TELEFONICA):
+  telefonic
+  | por telefone
+  | telefonia (fixa|movel)
+  | numeros telefonicos
+  | ligacoes automatizadas
+  | estratificada por ddd
+
+PADRAO ADICIONAL 1 (PAD_PESSOAL_TELEFONICA), tambem em DESENHO:
+  entrevistas? pessoa\w*\s+telefonic
+
+  Motivo: o Parana Pesquisas escreve "realizacao de entrevistas pessoais
+  telefonicas" (BR-07917/2022). A redacao junta os dois termos, mas a coleta
+  e por telefone. Quando este padrao casa, telefonica = 1 E presencial = 0.
+
+PADRAO ADICIONAL 2 (PAD_APLICACAO_TELEFONE), este busca em CONTROLE:
+  aplicacao dos questionarios[^.]{0,30}por telefone
+
+  Motivo: a Gerp (BR-09102, BR-02322, BR-05418/2022) nao declara o modo no
+  desenho. O unico sinal esta no controle: "controla e fiscaliza a APLICACAO
+  DOS QUESTIONARIOS (por telefone)" -- isso descreve como o questionario e
+  aplicado, nao como e conferido. O padrao exige a expressao "aplicacao dos
+  questionarios" seguida de "por telefone" em ate 30 caracteres, justamente
+  para NAO capturar "checados por telefone".
+
+CONTAGEM: 2018 -> 23 de 58 pesquisas | 2022 -> 51 de 116
+
+================================================================================
+2. presencial          (0/1)   -- ambos os anos
+================================================================================
+BUSCA EM: DESENHO
+
+PADRAO DIRETO (PAD_PRESENCIAL):
+  entrevistas? pessoa
+  | face-a-face
+  | abordagem pessoal
+  | entrevistas? domiciliar
+  | domiciliares
+  | ponto[s]? de fluxo
+
+PADRAO POR INFERENCIA (PAD_TERRITORIAL), ver feature 3.
+
+REGRA FINAL:
+  presencial = 1 se (padrao direto casou E nao e "pessoais telefonicas")
+               OU  (marco territorial casou E telefonica = 0)
+
+CONTAGEM: 2018 -> 35 de 58 | 2022 -> 57 de 116
+
+================================================================================
+3. presencial_inferido (0/1)   -- ambos os anos
+================================================================================
+BUSCA EM: DESENHO
+
+PADRAO (PAD_TERRITORIAL):
+  setor(?:es)? censitario
+  | sorteio[^.]{0,60}bairro
+  | bairros ou setores
+  | ponto[s]? de abordagem
+  | conglomerados?[^.]{0,40}(?:municipio|bairro|setor)
+
+REGRA: vale 1 quando o marco territorial casou MAS nem o padrao direto de
+presencial nem o de telefonica casaram. Ou seja, marca as linhas em que
+"presencial" veio de INFERENCIA, nao de mencao explicita.
+
+LOGICA DA INFERENCIA: sortear setor censitario ou bairro e amostragem por
+conglomerados de area, e ela e presencial por construcao -- voce sorteia um
+setor do IBGE e vai la entrevistar. Pesquisa telefonica sorteia numeros
+estratificados por DDD, nunca setor censitario.
+
+VALIDACAO: testado nos 657 registros de 2018 e nos 1.192 de 2022. ZERO casos
+de marco territorial junto com coleta telefonica. A regra resolve 65
+registros de 2018 que ficariam sem modo.
+
+POR QUE NAO GENERALIZAR PARA "PPT": PPT (Probabilidade Proporcional ao
+Tamanho) sozinho NAO serve como sinal. Em 2022 ha 71 registros que combinam
+PPT com coleta telefonica. Por isso PPT ficou fora do padrao.
+
+USO SUGERIDO: e um marcador de qualidade da codificacao, nao um regressor.
+Rode o modelo com e sem essas linhas para testar robustez.
+
+CONTAGEM: 2018 -> 7 de 58 | 2022 -> 5 de 116
+
+================================================================================
+4. online              (0/1)   -- so 2022 (em 2018 e criada como 0)
+================================================================================
+BUSCA EM: DESENHO
+
+PADRAO (PAD_ONLINE):
+  questionario (?:estruturado )?web
+  | coleta[^.]{0,30}web
+  | via web
+  | online
+
+REGRA DE PRECEDENCIA: quando este padrao casa, telefonica, presencial e a
+inferencia territorial sao todos zerados. Questionario web autoaplicado nao
+e nenhum dos outros dois modos.
+
+CONTAGEM: 2022 -> 8 de 116 pesquisas (todas AtlasIntel). 2018 -> 0.
+
+================================================================================
+5. modo_manual         (0/1)   -- so 2022
+================================================================================
+NAO VEM DE BUSCA DE TEXTO. Vem do dicionario MODO_MANUAL, no topo de
+base_analise_2022.py:
+
+  BR-03033/2022 -> presencial
+  BR-01060/2022 -> presencial
+
+Os dois sao do Verita e descrevem apenas "realizacao de entrevistas", com
+plano amostral por PPT, sem citar setor censitario nem bairro. Nenhum padrao
+resolve, e a leitura do registro inteiro e conclusiva. Quando aplicado, os
+tres modos sao zerados e so o escolhido vira 1.
+
+USO: mesma logica de presencial_inferido -- serve para teste de robustez.
+
+CONTAGEM: 2022 -> 2 de 116.
+
+================================================================================
+6. pct_checagem        (numerico, em %)   -- ambos os anos
+================================================================================
+BUSCA EM: CONTROLE
+
+Tres padroes tentados NESTA ORDEM. O primeiro que casar define o valor.
+
+(a) VERBO ANTES DO NUMERO (PAD_CHECAGEM):
+    (?:checa|fiscaliza|auditad|auditor|verifica|supervis|conferencia
+       |conferir|retorno a campo)[^.]{0,220}?(\d+[,.]?\d*)\s*%
+
+    Exemplo: "fiscalizacao de cerca de 20% dos questionarios aplicados"
+    A janela de 220 caracteres e larga porque varios institutos separam o
+    verbo do numero por uma oracao inteira.
+
+(b) NUMERO ANTES DO VERBO (PAD_CHECAGEM_REVERSO):
+    (\d+[,.]?\d*)\s*%[^.]{0,80}?(?:d[oa]s|de)\s+
+    (?:questionarios|entrevistas|formularios|entrevistados)
+
+    Exemplo: "serao selecionados aproximadamente 20% dos questionarios
+    aplicados individualmente pelos entrevistadores, para a verificacao das
+    respostas". Aqui o verbo vem DEPOIS, e o padrao (a) falhava.
+
+    Por que exigir "% dos questionarios": para nao capturar percentual solto.
+    Um registro diz "nao atinjam os 100% em razao das dizimas periodicas" --
+    um padrao mais frouxo leria isso como checagem de 100%.
+
+(c) POR EXTENSO (PAD_CHECAGEM_EXTENSO):
+    (?:checa|fiscaliza|auditad|auditor|verifica|supervis|conferencia
+       |conferir)[^.]{0,220}?(dez|quinze|vinte|vinte e cinco|trinta
+       |quarenta|cinquenta)\s+por cento
+
+    Exemplo: MDA escreve "garantindo um minimo de vinte por cento de
+    checagem", sem digito nenhum.
+
+SE NENHUM CASAR: assume PCT_CHECAGEM_PADRAO = 20.0 e marca
+pct_checagem_imputado = 1 (ver feature 7).
+
+OBSERVACAO 1 -- valores baixos sao reais: em 2022 ha 1 pesquisa com 2%
+declarados ("sao selecionados aleatoriamente 2% dos questionarios para uma
+verificacao posterior"). Nao e erro de leitura. Vale conferir se nao e erro
+de digitacao do proprio instituto.
+
+OBSERVACAO 2 -- texto autocontraditorio: um registro de 2022 diz "20%
+(quinze por cento) dos questionarios". O digito e o extenso se contradizem
+na mesma frase. O codigo fica com o digito (padrao (a) ou (b) roda antes).
+
+OBSERVACAO 3 -- nenhum registro declara ausencia de checagem. Nos 98
+registros de 2018 e nos 115 de 2022, todos declaram algum controle. O que
+varia e o percentual e o vocabulario.
+
+OBSERVACAO 4 -- quase nao varia dentro do instituto (0% em ambos os anos).
+Cada casa declara sempre o mesmo valor. Com dummy de instituto no modelo,
+esta variavel nao e identificavel.
+
+DISTRIBUICAO (nivel pesquisa):
+  2018: 15% -> 1 | 20% -> 45 | 30% -> 12
+  2022:  2% -> 1 | 15% -> 8  | 20% -> 92 | 30% -> 15
+
+================================================================================
+7. pct_checagem_imputado (0/1)   -- ambos os anos
+================================================================================
+NAO VEM DE BUSCA. Vale 1 quando nenhum dos tres padroes de checagem casou e
+o valor 20% foi assumido.
+
+IMPORTANTE: depois de preenchido, um valor imputado e indistinguivel de um
+declarado. Esta coluna existe para que a distincao nao se perca.
+
+CONTAGEM ATUAL: 0 nos dois anos -- os tres padroes cobrem toda a base. A
+constante e a coluna ficam como rede caso a base seja ampliada.
+
+================================================================================
+8. divulgada_vespera   (0/1)   -- so 2022 na pratica
+================================================================================
+NAO VEM DE BUSCA DE TEXTO. Calculada de DT_DIVULGACAO:
+
+  dias_divulgacao_ate_eleicao = data_eleicao - DT_DIVULGACAO
+  divulgada_vespera = 1 quando essa diferenca e exatamente 1 dia
+
+LIMITACAO IMPORTANTE: o CSV de dados abertos de 2018 NAO tem a coluna
+DT_DIVULGACAO (o de 2022 tem). Em 2018 a marca fica sempre 0, e isso nao
+significa que nenhuma pesquisa foi divulgada na vespera -- significa que a
+informacao nao existe no dado estruturado. Ela esta no PDF do registro.
+
+CONTAGEM: 2022 -> 9 de 116 pesquisas | 2018 -> 0 (coluna ausente).
+
+================================================================================
+9. amostra / amostra_origem / amostra_implausivel_no_tse
+================================================================================
+NAO VEM DE BUSCA DE TEXTO.
+
+REGRA: QT_ENTREVISTADOS do TSE prevalece sobre o valor da base de pesquisas.
+
+EXCECAO: se QT_ENTREVISTADOS < AMOSTRA_MINIMA_PLAUSIVEL (= 300), o registro
+esta corrompido e usa-se o valor da base de pesquisas.
+  Caso real: BR-06922/2022 e BR-03760/2022 (PoderData) estao registrados no
+  TSE com 3 entrevistados e margem de 2 pp. A base traz 3.500, que e o valor
+  coerente com a margem declarada.
+
+COLUNAS DE RASTREIO:
+  amostra                    -> valor usado
+  amostra_tse                -> o que o TSE declara
+  amostra_base_original      -> o que a base de pesquisas traz
+  amostra_origem             -> "TSE" ou "base_original"
+  divergencia_amostra        -> 1 quando os dois valores diferem
+  amostra_implausivel_no_tse -> 1 quando a excecao foi acionada
+
+CONTAGEM: divergencia -> 2018: 11 de 58 | 2022: 8 de 116
+          implausivel -> 2018: 0        | 2022: 2
+
+================================================================================
+10. dias_ate_eleicao / dias_campo / final_de_semana
+================================================================================
+NAO VEM DE BUSCA DE TEXTO.
+
+dias_ate_eleicao = data da eleicao - FIM do campo
+  Usa o fim, nao o inicio. A base de 2022 trazia uma coluna homonima que
+  contava do INICIO e ainda tinha 2 valores impossiveis (MDA com 32 e
+  Datafolha com 53 dias no 2o turno, cuja janela toda tem 28). A coluna
+  original foi preservada em colunas_extra.
+
+dias_campo = (DT_FIM_PESQUISA - DT_INICIO_PESQUISA) + 1
+  Vem do registro do TSE, nao da base de pesquisas. O +1 conta os dois
+  extremos: campo de 3 a 5 de outubro sao 3 dias, nao 2.
+  Amplitude observada: 1 a 7 dias nos dois anos.
+
+final_de_semana = 1 quando o campo terminou em sabado ou domingo.
+
+ARMADILHA DE FORMATO: o CSV de 2018 traz data como "01/10/2018" e o de 2022
+como ISO ("2022-04-27 00:00:00"). Fixar um formato faz o outro virar nulo em
+silencio -- foi assim que dias_campo ficou vazio nas 802 linhas de 2022 sem
+nenhum aviso. A funcao para_data() tenta os dois.
+
+================================================================================
+11. cand_grande        (0/1)   -- ambos os anos
+================================================================================
+NAO VEM DE BUSCA DE TEXTO. E a pertinencia ao par que chegou ao 2o turno:
+  2018 -> {haddad, bolsonaro}
+  2022 -> {lula, bolsonaro}
+
+POR QUE NAO USAR UM LIMIAR TIPO "pct > 20": porque o percentual da pesquisa
+entra no calculo da dependente (abs_vies). A variavel viraria funcao do
+proprio erro. A definicao por identidade do candidato e exogena.
+
+OBSERVACAO CRITICA PARA A ESTIMACAO: no 2o turno a variavel e CONSTANTE = 1,
+porque so existem os dois finalistas. O coeficiente e identificado apenas
+com dados do 1o turno. Se voce rodar o modelo so com pesquisas de 2o turno,
+a variavel desaparece.
+
+Alternativa exogena que varia nos dois turnos: percentual_real, que em 2018
+e 55,13 x 44,87 no 2o turno e em 2022 e 50,90 x 49,10.
+
+================================================================================
+NOTA FINAL -- LIMITE DE INTERPRETACAO DAS FEATURES METODOLOGICAS
+================================================================================
+Medi quanto cada variavel varia DENTRO do mesmo instituto:
+
+                        2018    2022
+  telefonica              0%      5%
+  pct_checagem            0%      0%
+  margem_erro_pp          0%     10%
+  valor_pesquisa          4%      4%
+  dias_ate_eleicao       82%     93%
+
+Cada instituto usa sempre o mesmo modo, sempre a mesma checagem, sempre a
+mesma margem. Isso significa que modo de coleta e identidade do instituto
+sao praticamente o mesmo pacote nestes dados.
+
+Consequencia pratica: com dummy de instituto no modelo, telefonica e
+pct_checagem nao sao identificaveis (sao colineares com as dummies). Sem
+dummy de instituto, elas sao estimaveis mas o coeficiente mistura o efeito
+do metodo com o efeito da casa que o adota.
+
+Nao e defeito da extracao: e limite do desenho observacional. Voce nunca ve
+o mesmo instituto trocando de modo. A pergunta respondivel e a descritiva
+("pesquisas telefonicas erram mais?"), nao a causal ("o telefone causa mais
+erro?"). Escrever isso como associacao, e nao como efeito, e o correto.
